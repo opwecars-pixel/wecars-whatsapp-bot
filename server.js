@@ -2,6 +2,7 @@ const express = require("express");
 const OpenAI = require("openai");
 const axios = require("axios");
 const { Pool } = require("pg");
+const cloudinary = require("cloudinary").v2;
 
 const app = express();
 
@@ -16,6 +17,60 @@ app.use((req, res, next) => {
   if (req.method === "OPTIONS") return res.sendStatus(200);
   next();
 });
+
+// ── Cloudinary ────────────────────────────────────────────────────────────────
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key:    process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+  secure:     true,
+});
+
+// Descarga foto de Twilio (requiere auth) y la sube a Cloudinary
+async function subirFotoCloudinary(twilioUrl, index, telefono) {
+  try {
+    // 1. Descarga autenticada desde Twilio
+    const response = await axios.get(twilioUrl, {
+      responseType: "arraybuffer",
+      auth: {
+        username: process.env.TWILIO_ACCOUNT_SID,
+        password: process.env.TWILIO_AUTH_TOKEN,
+      },
+      timeout: 15000,
+    });
+
+    const buffer = Buffer.from(response.data);
+    const mimeType = response.headers["content-type"] || "image/jpeg";
+
+    // 2. Sube a Cloudinary como stream desde buffer
+    const publicId = `wecars/${telefono.replace(/\D/g, "")}_${Date.now()}_${index}`;
+
+    const resultado = await new Promise((resolve, reject) => {
+      const uploadStream = cloudinary.uploader.upload_stream(
+        {
+          public_id:  publicId,
+          folder:     "wecars-leads",
+          resource_type: "image",
+          format:     "webp",          // convierte a WebP (más ligero)
+          quality:    "auto:good",     // optimización automática
+          transformation: [{ width: 1200, crop: "limit" }], // max 1200px
+        },
+        (error, result) => {
+          if (error) reject(error);
+          else resolve(result);
+        }
+      );
+      uploadStream.end(buffer);
+    });
+
+    console.log(`[Cloudinary] Foto ${index + 1} subida: ${resultado.secure_url}`);
+    return resultado.secure_url;
+
+  } catch (err) {
+    console.error(`[Cloudinary] Error foto ${index}:`, err.message);
+    return null; // No bloquea el flujo si falla una foto
+  }
+}
 
 // ── OpenAI ────────────────────────────────────────────────────────────────────
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -202,6 +257,8 @@ async function procesarConversacion(textoTotal, telefono, nombre, totalImagenes,
       totalImagenes > 0 ? `Imágenes (${totalImagenes}): ${imagenes.map(i => i.url).join(" | ")}` : "",
     ].filter(Boolean).join("\n");
 
+    const urlsFotos = imagenes.map(i => i.url).filter(Boolean);
+
     // 1️⃣ Monday.com — un solo item por conversación
     const mondayId = await crearItemMonday({
       marca:        clasificacion.marca,
@@ -214,6 +271,7 @@ async function procesarConversacion(textoTotal, telefono, nombre, totalImagenes,
       factura:      clasificacion.factura,
       telefono:     telefonoLimpio,
       comentarios:  comentariosCompletos,
+      urlsFotos,
     });
     console.log("[Monday] Item creado:", mondayId);
 
@@ -253,7 +311,12 @@ async function crearItemMonday(datos) {
     text_mm3hx5k:     datos.ciudad   || "",
     text_mm3hdqs4:    datos.factura  || "",
     phone_mm3hh4n:    { phone: datos.telefono || "", countryShortName: "MX" },
-    long_text_mm3hvzwc: datos.comentarios || "",
+    long_text_mm3hvzwc: [
+      datos.comentarios || "",
+      datos.urlsFotos?.length
+        ? `\n📷 FOTOS (${datos.urlsFotos.length}):\n${datos.urlsFotos.map((u, i) => `Foto ${i + 1}: ${u}`).join("\n")}`
+        : "",
+    ].filter(Boolean).join("\n"),
     color_mm3htx5t:   { label: "Pendiente" },
   };
 
@@ -332,11 +395,22 @@ app.post("/webhook", async (req, res) => {
     const totalImagenes = Number(req.body.NumMedia || 0);
     const imagenes = [];
 
+    // Sube fotos a Cloudinary en paralelo (URLs públicas permanentes)
+    const subidas = await Promise.all(
+      Array.from({ length: totalImagenes }, (_, i) =>
+        subirFotoCloudinary(req.body[`MediaUrl${i}`], i, telefono)
+      )
+    );
     for (let i = 0; i < totalImagenes; i++) {
-      imagenes.push({ url: req.body[`MediaUrl${i}`], tipo: req.body[`MediaContentType${i}`] });
+      const urlPublica = subidas[i];
+      imagenes.push({
+        url:  urlPublica || req.body[`MediaUrl${i}`], // fallback a Twilio si falla Cloudinary
+        tipo: req.body[`MediaContentType${i}`],
+        cloudinary: !!urlPublica,
+      });
     }
 
-    console.log(`[WhatsApp] ${nombre || telefono} | msg: "${mensaje.slice(0, 60)}" | imgs: ${totalImagenes}`);
+    console.log(`[WhatsApp] ${nombre || telefono} | msg: "${mensaje.slice(0, 60)}" | imgs: ${totalImagenes} (${subidas.filter(Boolean).length} en Cloudinary)`);
 
     // Acumula en buffer — procesa después de 30s de silencio
     agregarAlBuffer(telefono, nombre, mensaje, imagenes);
