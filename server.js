@@ -342,14 +342,15 @@ async function guardarEnDB(datos, mondayId) {
   const result = await pool.query(
     `INSERT INTO whatsapp_leads
        (telefono, nombre, marca, modelo, version, anio, kilometraje, precio,
-        ciudad, factura, comentarios, imagenes, prioridad, faltantes, monday_item_id)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+        ciudad, factura, comentarios, imagenes, prioridad, faltantes, monday_item_id, publicado)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
      RETURNING id`,
     [
       datos.telefono, datos.nombre, datos.marca, datos.modelo, datos.version,
       datos.anio ?? null, datos.kilometraje ?? null, datos.precio ?? null,
       datos.ciudad, datos.factura, datos.comentarios,
       datos.imagenes || [], datos.prioridad, datos.faltantes || [], mondayId,
+      false, // publicado = false por defecto → se activa desde Monday al aprobar
     ]
   );
   return result.rows[0].id;
@@ -417,6 +418,44 @@ app.post("/webhook", async (req, res) => {
 
   } catch (err) {
     console.error("[Error webhook]:", err.message);
+  }
+});
+
+// ── POST /monday-publish — Monday llama esto cuando se hace click en "Publicar" ──
+// Monday envía un challenge la primera vez para verificar el endpoint
+app.post("/monday-publish", async (req, res) => {
+  // Verificación de Monday (handshake inicial)
+  if (req.body.challenge) {
+    console.log("[Monday Webhook] Challenge recibido, respondiendo...");
+    return res.json({ challenge: req.body.challenge });
+  }
+
+  const itemId = (req.body.event?.pulseId || req.body.event?.itemId)?.toString();
+  if (!itemId) {
+    console.log("[Monday Webhook] Sin itemId en el body:", JSON.stringify(req.body));
+    return res.status(400).json({ error: "No itemId" });
+  }
+
+  console.log(`[Monday Webhook] Publicando item Monday: ${itemId}`);
+
+  try {
+    const result = await pool.query(
+      `UPDATE whatsapp_leads SET publicado = true WHERE monday_item_id = $1 RETURNING id, marca, modelo`,
+      [itemId]
+    );
+
+    if (result.rows.length === 0) {
+      console.log(`[Monday Webhook] Item ${itemId} no encontrado en DB`);
+      return res.json({ ok: false, msg: "No encontrado en DB" });
+    }
+
+    const { id, marca, modelo } = result.rows[0];
+    console.log(`[Monday Webhook] ✅ Publicado en weMarket: ${marca} ${modelo} (DB id: ${id})`);
+    res.json({ ok: true, id });
+
+  } catch (err) {
+    console.error("[Monday Webhook] Error:", err.message);
+    res.status(500).json({ error: err.message });
   }
 });
 
