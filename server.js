@@ -303,9 +303,47 @@ async function procesarConversacion(textoTotal, telefono, nombre, totalImagenes,
 async function crearItemMonday(datos) {
   // ── Inferir Carrocería y Segmento desde modelo/marca si no vienen explícitos ──
   const carroceriaMap = {
+    // Palabras genéricas en el nombre
     suv: "SUV", pickup: "Pickup", "pick up": "Pickup", camioneta: "Camioneta",
     hatchback: "Hatchback", sedan: "Sedán", "sedán": "Sedán",
     crossover: "Crossover", coupe: "Coupé", "coupé": "Coupé", convertible: "Convertible",
+    // Modelos SUV/Crossover conocidos
+    cherokee: "SUV", "grand cherokee": "SUV", wrangler: "SUV", compass: "SUV",
+    renegade: "SUV", gladiator: "Pickup",
+    "4runner": "SUV", "rav4": "SUV", "land cruiser": "SUV", fortuner: "SUV", runner: "SUV",
+    highlander: "SUV", sequoia: "SUV", "fj cruiser": "SUV",
+    "cr-v": "SUV", crv: "SUV", "hr-v": "SUV", hrv: "SUV", pilot: "SUV", passport: "SUV",
+    "cx-5": "SUV", cx5: "SUV", "cx-3": "SUV", "cx-30": "SUV", "cx-9": "SUV", "cx-50": "SUV",
+    "x-trail": "SUV", xtrail: "SUV", kicks: "SUV", pathfinder: "SUV", armada: "SUV", murano: "SUV",
+    "x1": "SUV", "x2": "SUV", "x3": "SUV", "x4": "SUV", "x5": "SUV", "x6": "SUV", "x7": "SUV",
+    "q3": "SUV", "q5": "SUV", "q7": "SUV", "q8": "SUV",
+    "glc": "SUV", "gle": "SUV", "gls": "SUV", "gla": "SUV", "glb": "SUV",
+    explorer: "SUV", expedition: "SUV", bronco: "SUV", escape: "SUV", ecosport: "SUV", territory: "SUV",
+    tahoe: "SUV", suburban: "SUV", equinox: "SUV", trailblazer: "SUV", blazer: "SUV", traverse: "SUV",
+    "range rover": "SUV", defender: "SUV", discovery: "SUV",
+    tucson: "SUV", santa: "SUV", venue: "SUV",
+    sportage: "SUV", sorento: "SUV", telluride: "SUV", seltos: "SUV",
+    "t-roc": "SUV", tiguan: "SUV", touareg: "SUV", taos: "SUV", taigun: "SUV",
+    cx3: "SUV", cx30: "SUV", troc: "SUV",
+    // Modelos Pickup conocidos
+    "f-150": "Pickup", f150: "Pickup", "f-250": "Pickup", ranger: "Pickup",
+    hilux: "Pickup", tacoma: "Pickup", tundra: "Pickup",
+    silverado: "Pickup", colorado: "Pickup", sierra: "Pickup",
+    "ram 1500": "Pickup", "ram 2500": "Pickup", "ram 700": "Pickup",
+    frontier: "Pickup", navara: "Pickup", np300: "Pickup",
+    "l200": "Pickup", "triton": "Pickup",
+    "s10": "Pickup", "canyon": "Pickup",
+    // Modelos Sedan conocidos
+    corolla: "Sedán", camry: "Sedán", civic: "Sedán", accord: "Sedán",
+    jetta: "Sedán", passat: "Sedán", vento: "Sedán",
+    sentra: "Sedán", versa: "Sedán", altima: "Sedán", maxima: "Sedán",
+    mazda3: "Sedán", "mazda 3": "Sedán", mazda6: "Sedán", "mazda 6": "Sedán",
+    elantra: "Sedán", accent: "Sedán",
+    rio: "Sedán", forte: "Sedán",
+    // Hatchback conocidos
+    polo: "Hatchback", "golf": "Hatchback", fit: "Hatchback", yaris: "Hatchback",
+    march: "Hatchback", aveo: "Hatchback", spark: "Hatchback", beat: "Hatchback",
+    "208": "Hatchback", "308": "Hatchback",
   };
   const segmentoMap = {
     // marcas premium/lujo
