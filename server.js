@@ -373,7 +373,7 @@ async function obtenerVehiculosMonday() {
   const query = `
     query ($boardId: ID!) {
       boards(ids: [$boardId]) {
-        items_page(limit: 50, query_params: { order_by: [{ column_id: "creation_log__1", direction: desc }] }) {
+        items_page(limit: 50) {
           items {
             id
             name
@@ -395,7 +395,10 @@ async function obtenerVehiculosMonday() {
     { headers: { Authorization: process.env.MONDAY_API_KEY, "Content-Type": "application/json" } }
   );
 
-  const items = response.data?.data?.boards?.[0]?.items_page?.items || [];
+  const raw = response.data;
+  if (raw.errors) console.error("[Monday Market] Errors:", JSON.stringify(raw.errors));
+  const items = raw?.data?.boards?.[0]?.items_page?.items || [];
+  console.log(`[Monday Market] Board ${MONDAY_MARKET_BOARD_ID} → ${items.length} items`);
 
   return items.map(item => {
     // Convierte el array de column_values a un objeto { colId: text }
