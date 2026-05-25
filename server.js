@@ -301,6 +301,33 @@ async function procesarConversacion(textoTotal, telefono, nombre, totalImagenes,
 
 // ── Monday.com ────────────────────────────────────────────────────────────────
 async function crearItemMonday(datos) {
+  // ── Inferir Carrocería y Segmento desde modelo/marca si no vienen explícitos ──
+  const carroceriaMap = {
+    suv: "SUV", pickup: "Pickup", "pick up": "Pickup", camioneta: "Camioneta",
+    hatchback: "Hatchback", sedan: "Sedán", "sedán": "Sedán",
+    crossover: "Crossover", coupe: "Coupé", "coupé": "Coupé", convertible: "Convertible",
+  };
+  const segmentoMap = {
+    // marcas premium/lujo
+    bmw: "Premium", mercedes: "Premium", audi: "Premium", lexus: "Premium",
+    porsche: "Lujo", ferrari: "Lujo", lamborghini: "Lujo", maserati: "Lujo",
+    volvo: "Premium", infiniti: "Premium", acura: "Premium", genesis: "Premium",
+    // marcas medias
+    volkswagen: "Medio", vw: "Medio", honda: "Medio", toyota: "Medio",
+    mazda: "Medio", nissan: "Medio", chevrolet: "Medio", ford: "Medio",
+    hyundai: "Medio", kia: "Medio", subaru: "Medio", jeep: "Medio",
+    // económicas
+    seat: "Económico", fiat: "Económico", renault: "Económico", datsun: "Económico",
+  };
+
+  const modeloLower = (datos.modelo || "").toLowerCase();
+  const marcaLower  = (datos.marca  || "").toLowerCase();
+
+  const carroceriaDetectada = datos.carroceria ||
+    Object.entries(carroceriaMap).find(([k]) => modeloLower.includes(k))?.[1] || "";
+  const segmentoDetectado = datos.segmento ||
+    Object.entries(segmentoMap).find(([k]) => marcaLower.includes(k))?.[1] || "Medio";
+
   const columnValues = {
     text_mm3hz3ps:    datos.marca    || "",
     text_mm3hnpfp:    datos.modelo   || "",
@@ -318,6 +345,10 @@ async function crearItemMonday(datos) {
         : "",
     ].filter(Boolean).join("\n"),
     color_mm3htx5t:   { label: "Pendiente" },
+    // ── Nuevas columnas de clasificación ──────────────────────────────────────
+    dropdown_mm3p903w: carroceriaDetectada ? { labels: [carroceriaDetectada] } : {},
+    dropdown_mm3pa49f: segmentoDetectado   ? { labels: [segmentoDetectado]   } : {},
+    boolean_mm3pcnm4:  datos.aceptaCredito ? { checked: "true" }              : {},
   };
 
   const query = `
@@ -422,21 +453,38 @@ async function obtenerVehiculosMonday() {
       }
     } catch (_) {}
 
+    // Carrocería y Segmento vienen como JSON en .value (dropdown)
+    let carroceria = "";
+    let segmento   = "";
+    try {
+      const cVal = item.column_values.find(c => c.id === "dropdown_mm3p89g4");
+      if (cVal?.text) carroceria = cVal.text;
+    } catch (_) {}
+    try {
+      const sVal = item.column_values.find(c => c.id === "dropdown_mm3ptfc5");
+      if (sVal?.text) segmento = sVal.text;
+    } catch (_) {}
+    // Acepta crédito: boolean
+    const aceptaCredito = item.column_values.find(c => c.id === "boolean_mm3pa3jr")?.text === "true";
+
     return {
-      id:          item.id,
-      monday_id:   item.id,
-      nombre:      item.name,
-      marca:       cols["text_mm3hz3ps"]    || null,
-      modelo:      cols["text_mm3hnpfp"]    || null,
-      version:     cols["text_mm3h4yrh"]    || null,
-      anio:        parseInt(cols["numeric_mm3h6v7"])  || null,
-      kilometraje: parseInt(cols["numeric_mm3h45jr"]) || null,
-      precio:      parseInt(cols["numeric_mm3ha16x"]) || null,
-      ciudad:      cols["text_mm3hx5k"]     || null,
-      factura:     cols["text_mm3hdqs4"]    || null,
+      id:            item.id,
+      monday_id:     item.id,
+      nombre:        item.name,
+      marca:         cols["text_mm3hz3ps"]    || null,
+      modelo:        cols["text_mm3hnpfp"]    || null,
+      version:       cols["text_mm3h4yrh"]    || null,
+      anio:          parseInt(cols["numeric_mm3h6v7"])  || null,
+      kilometraje:   parseInt(cols["numeric_mm3h45jr"]) || null,
+      precio:        parseInt(cols["numeric_mm3ha16x"]) || null,
+      ciudad:        cols["text_mm3hx5k"]     || null,
+      factura:       cols["text_mm3hdqs4"]    || null,
+      carroceria:    carroceria || null,
+      segmento:      segmento   || null,
+      aceptaCredito,
       telefono,
       imagenes,
-      created_at:  item.created_at,
+      created_at:    item.created_at,
     };
   });
 }
