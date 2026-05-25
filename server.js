@@ -378,15 +378,13 @@ async function crearItemMonday(datos) {
     phone_mm3hh4n:    { phone: datos.telefono || "", countryShortName: "MX" },
     long_text_mm3hvzwc: [
       datos.comentarios || "",
+      carroceriaDetectada ? `Carrocería: ${carroceriaDetectada}` : "",
+      segmentoDetectado   ? `Segmento: ${segmentoDetectado}`     : "",
       datos.urlsFotos?.length
         ? `\n📷 FOTOS (${datos.urlsFotos.length}):\n${datos.urlsFotos.map((u, i) => `Foto ${i + 1}: ${u}`).join("\n")}`
         : "",
     ].filter(Boolean).join("\n"),
     color_mm3htx5t:   { label: "Pendiente" },
-    // ── Nuevas columnas de clasificación ──────────────────────────────────────
-    dropdown_mm3p903w: carroceriaDetectada ? { labels: [carroceriaDetectada] } : {},
-    dropdown_mm3pa49f: segmentoDetectado   ? { labels: [segmentoDetectado]   } : {},
-    boolean_mm3pcnm4:  datos.aceptaCredito ? { checked: "true" }              : {},
   };
 
   const query = `
