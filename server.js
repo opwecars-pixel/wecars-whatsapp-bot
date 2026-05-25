@@ -498,6 +498,28 @@ app.post("/webhook", async (req, res) => {
   }
 });
 
+// ── GET /debug-monday — diagnóstico temporal ──────────────────────────────────
+app.get("/debug-monday", async (req, res) => {
+  try {
+    const query = `query ($boardId: ID!) {
+      boards(ids: [$boardId]) {
+        name
+        items_page(limit: 5) {
+          items { id name created_at column_values { id text } }
+        }
+      }
+    }`;
+    const response = await axios.post(
+      "https://api.monday.com/v2",
+      { query, variables: { boardId: MONDAY_MARKET_BOARD_ID } },
+      { headers: { Authorization: process.env.MONDAY_API_KEY, "Content-Type": "application/json" } }
+    );
+    res.json(response.data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── POST /monday-publish — Monday llama esto cuando se hace click en "Publicar" ──
 // Monday envía un challenge la primera vez para verificar el endpoint
 app.post("/monday-publish", async (req, res) => {
