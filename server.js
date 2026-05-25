@@ -366,21 +366,95 @@ app.get("/", (req, res) => {
   });
 });
 
-// ── GET /vehiculos — API para weMarket Zone ───────────────────────────────────
+// ── GET /vehiculos — Lee del tablero weCars Market de Monday (publicados) ─────
+const MONDAY_MARKET_BOARD_ID = process.env.MONDAY_MARKET_BOARD_ID || "18414157675";
+
+async function obtenerVehiculosMonday() {
+  const query = `
+    query ($boardId: ID!) {
+      boards(ids: [$boardId]) {
+        items_page(limit: 50, query_params: { order_by: [{ column_id: "creation_log__1", direction: desc }] }) {
+          items {
+            id
+            name
+            created_at
+            column_values {
+              id
+              text
+              value
+            }
+          }
+        }
+      }
+    }
+  `;
+
+  const response = await axios.post(
+    "https://api.monday.com/v2",
+    { query, variables: { boardId: MONDAY_MARKET_BOARD_ID } },
+    { headers: { Authorization: process.env.MONDAY_API_KEY, "Content-Type": "application/json" } }
+  );
+
+  const items = response.data?.data?.boards?.[0]?.items_page?.items || [];
+
+  return items.map(item => {
+    // Convierte el array de column_values a un objeto { colId: text }
+    const cols = {};
+    for (const cv of item.column_values) {
+      cols[cv.id] = cv.text || "";
+    }
+
+    // Extrae URLs de Cloudinary del campo de comentarios/long_text
+    const longText = item.column_values.find(c => c.id === "long_text_mm3hvzwc")?.text || "";
+    const fotoRegex = /https:\/\/res\.cloudinary\.com\/[^\s]+/g;
+    const imagenes = longText.match(fotoRegex) || [];
+
+    // Teléfono viene como objeto JSON en el value
+    let telefono = "";
+    try {
+      const phoneVal = item.column_values.find(c => c.id === "phone_mm3hh4n");
+      if (phoneVal?.value) {
+        const parsed = JSON.parse(phoneVal.value);
+        telefono = parsed.phone || "";
+      }
+    } catch (_) {}
+
+    return {
+      id:          item.id,
+      monday_id:   item.id,
+      nombre:      item.name,
+      marca:       cols["text_mm3hz3ps"]    || null,
+      modelo:      cols["text_mm3hnpfp"]    || null,
+      version:     cols["text_mm3h4yrh"]    || null,
+      anio:        parseInt(cols["numeric_mm3h6v7"])  || null,
+      kilometraje: parseInt(cols["numeric_mm3h45jr"]) || null,
+      precio:      parseInt(cols["numeric_mm3ha16x"]) || null,
+      ciudad:      cols["text_mm3hx5k"]     || null,
+      factura:     cols["text_mm3hdqs4"]    || null,
+      telefono,
+      imagenes,
+      created_at:  item.created_at,
+    };
+  });
+}
+
 app.get("/vehiculos", async (req, res) => {
   try {
-    const result = await pool.query(
-      `SELECT id, marca, modelo, version, anio, kilometraje, precio,
-              ciudad, factura, imagenes, prioridad, telefono, nombre, created_at
-       FROM whatsapp_leads
-       WHERE publicado = true
-       ORDER BY created_at DESC
-       LIMIT 50`
-    );
-    res.json({ ok: true, total: result.rows.length, vehiculos: result.rows });
+    const vehiculos = await obtenerVehiculosMonday();
+    res.json({ ok: true, total: vehiculos.length, vehiculos });
   } catch (err) {
-    console.error("[DB] Error:", err.message);
-    res.status(500).json({ ok: false, error: err.message });
+    console.error("[Monday Market] Error:", err.message);
+    // Fallback a PostgreSQL si Monday falla
+    try {
+      const result = await pool.query(
+        `SELECT id, marca, modelo, version, anio, kilometraje, precio,
+                ciudad, factura, imagenes, prioridad, telefono, nombre, created_at
+         FROM whatsapp_leads WHERE publicado = true ORDER BY created_at DESC LIMIT 50`
+      );
+      res.json({ ok: true, total: result.rows.length, vehiculos: result.rows, source: "db_fallback" });
+    } catch (dbErr) {
+      res.status(500).json({ ok: false, error: err.message });
+    }
   }
 });
 
