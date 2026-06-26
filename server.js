@@ -99,8 +99,7 @@ async function initDB() {
       imagenes      TEXT[],
       prioridad     TEXT,
       faltantes     TEXT[],
-      monday_item_id TEXT,
-      publicado     BOOLEAN DEFAULT true,
+      publicado     BOOLEAN DEFAULT false,
       created_at    TIMESTAMPTZ DEFAULT NOW()
     )
   `);
@@ -257,25 +256,6 @@ async function procesarConversacion(textoTotal, telefono, nombre, totalImagenes,
       totalImagenes > 0 ? `Imágenes (${totalImagenes}): ${imagenes.map(i => i.url).join(" | ")}` : "",
     ].filter(Boolean).join("\n");
 
-    const urlsFotos = imagenes.map(i => i.url).filter(Boolean);
-
-    // 1️⃣ Monday.com — un solo item por conversación
-    const mondayId = await crearItemMonday({
-      marca:        clasificacion.marca,
-      modelo:       clasificacion.modelo,
-      version:      clasificacion.version,
-      anio:         clasificacion.anio,
-      kilometraje:  clasificacion.kilometraje,
-      precio:       clasificacion.precio,
-      ciudad:       clasificacion.ciudad,
-      factura:      clasificacion.factura,
-      telefono:     telefonoLimpio,
-      comentarios:  comentariosCompletos,
-      urlsFotos,
-    });
-    console.log("[Monday] Item creado:", mondayId);
-
-    // 2️⃣ PostgreSQL
     const dbId = await guardarEnDB({
       telefono:    telefonoLimpio,
       nombre,
@@ -291,7 +271,7 @@ async function procesarConversacion(textoTotal, telefono, nombre, totalImagenes,
       imagenes:    imagenes.map(i => i.url),
       prioridad:   clasificacion.prioridad,
       faltantes:   clasificacion.faltantes,
-    }, mondayId);
+    });
     console.log("[DB] Lead guardado id:", dbId, "→ weMarket ✅");
 
   } catch (err) {
@@ -299,125 +279,20 @@ async function procesarConversacion(textoTotal, telefono, nombre, totalImagenes,
   }
 }
 
-// ── Monday.com ────────────────────────────────────────────────────────────────
-async function crearItemMonday(datos) {
-  // ── Inferir Carrocería y Segmento desde modelo/marca si no vienen explícitos ──
-  const carroceriaMap = {
-    // Palabras genéricas en el nombre
-    suv: "SUV", pickup: "Pickup", "pick up": "Pickup", camioneta: "Camioneta",
-    hatchback: "Hatchback", sedan: "Sedán", "sedán": "Sedán",
-    crossover: "Crossover", coupe: "Coupé", "coupé": "Coupé", convertible: "Convertible",
-    // Modelos SUV/Crossover conocidos
-    cherokee: "SUV", "grand cherokee": "SUV", wrangler: "SUV", compass: "SUV",
-    renegade: "SUV", gladiator: "Pickup",
-    "4runner": "SUV", "rav4": "SUV", "land cruiser": "SUV", fortuner: "SUV", runner: "SUV",
-    highlander: "SUV", sequoia: "SUV", "fj cruiser": "SUV",
-    "cr-v": "SUV", crv: "SUV", "hr-v": "SUV", hrv: "SUV", pilot: "SUV", passport: "SUV",
-    "cx-5": "SUV", cx5: "SUV", "cx-3": "SUV", "cx-30": "SUV", "cx-9": "SUV", "cx-50": "SUV",
-    "x-trail": "SUV", xtrail: "SUV", kicks: "SUV", pathfinder: "SUV", armada: "SUV", murano: "SUV",
-    "x1": "SUV", "x2": "SUV", "x3": "SUV", "x4": "SUV", "x5": "SUV", "x6": "SUV", "x7": "SUV",
-    "q3": "SUV", "q5": "SUV", "q7": "SUV", "q8": "SUV",
-    "glc": "SUV", "gle": "SUV", "gls": "SUV", "gla": "SUV", "glb": "SUV",
-    explorer: "SUV", expedition: "SUV", bronco: "SUV", escape: "SUV", ecosport: "SUV", territory: "SUV",
-    tahoe: "SUV", suburban: "SUV", equinox: "SUV", trailblazer: "SUV", blazer: "SUV", traverse: "SUV",
-    "range rover": "SUV", defender: "SUV", discovery: "SUV",
-    tucson: "SUV", santa: "SUV", venue: "SUV",
-    sportage: "SUV", sorento: "SUV", telluride: "SUV", seltos: "SUV",
-    "t-roc": "SUV", tiguan: "SUV", touareg: "SUV", taos: "SUV", taigun: "SUV",
-    cx3: "SUV", cx30: "SUV", troc: "SUV",
-    // Modelos Pickup conocidos
-    "f-150": "Pickup", f150: "Pickup", "f-250": "Pickup", ranger: "Pickup",
-    hilux: "Pickup", tacoma: "Pickup", tundra: "Pickup",
-    silverado: "Pickup", colorado: "Pickup", sierra: "Pickup",
-    "ram 1500": "Pickup", "ram 2500": "Pickup", "ram 700": "Pickup",
-    frontier: "Pickup", navara: "Pickup", np300: "Pickup",
-    "l200": "Pickup", "triton": "Pickup",
-    "s10": "Pickup", "canyon": "Pickup",
-    // Modelos Sedan conocidos
-    corolla: "Sedán", camry: "Sedán", civic: "Sedán", accord: "Sedán",
-    jetta: "Sedán", passat: "Sedán", vento: "Sedán",
-    sentra: "Sedán", versa: "Sedán", altima: "Sedán", maxima: "Sedán",
-    mazda3: "Sedán", "mazda 3": "Sedán", mazda6: "Sedán", "mazda 6": "Sedán",
-    elantra: "Sedán", accent: "Sedán",
-    rio: "Sedán", forte: "Sedán",
-    // Hatchback conocidos
-    polo: "Hatchback", "golf": "Hatchback", fit: "Hatchback", yaris: "Hatchback",
-    march: "Hatchback", aveo: "Hatchback", spark: "Hatchback", beat: "Hatchback",
-    "208": "Hatchback", "308": "Hatchback",
-  };
-  const segmentoMap = {
-    // marcas premium/lujo
-    bmw: "Premium", mercedes: "Premium", audi: "Premium", lexus: "Premium",
-    porsche: "Lujo", ferrari: "Lujo", lamborghini: "Lujo", maserati: "Lujo",
-    volvo: "Premium", infiniti: "Premium", acura: "Premium", genesis: "Premium",
-    // marcas medias
-    volkswagen: "Medio", vw: "Medio", honda: "Medio", toyota: "Medio",
-    mazda: "Medio", nissan: "Medio", chevrolet: "Medio", ford: "Medio",
-    hyundai: "Medio", kia: "Medio", subaru: "Medio", jeep: "Medio",
-    // económicas
-    seat: "Económico", fiat: "Económico", renault: "Económico", datsun: "Económico",
-  };
-
-  const modeloLower = (datos.modelo || "").toLowerCase();
-  const marcaLower  = (datos.marca  || "").toLowerCase();
-
-  const carroceriaDetectada = datos.carroceria ||
-    Object.entries(carroceriaMap).find(([k]) => modeloLower.includes(k))?.[1] || "";
-  const segmentoDetectado = datos.segmento ||
-    Object.entries(segmentoMap).find(([k]) => marcaLower.includes(k))?.[1] || "Medio";
-
-  const columnValues = {
-    text_mm3hz3ps:    datos.marca    || "",
-    text_mm3hnpfp:    datos.modelo   || "",
-    text_mm3h4yrh:    datos.version  || "",
-    numeric_mm3h6v7:  datos.anio         ?? null,
-    numeric_mm3h45jr: datos.kilometraje  ?? null,
-    numeric_mm3ha16x: datos.precio       ?? null,
-    text_mm3hx5k:     datos.ciudad   || "",
-    text_mm3hdqs4:    datos.factura  || "",
-    phone_mm3hh4n:    { phone: datos.telefono || "", countryShortName: "MX" },
-    long_text_mm3hvzwc: [
-      datos.comentarios || "",
-      carroceriaDetectada ? `Carrocería: ${carroceriaDetectada}` : "",
-      segmentoDetectado   ? `Segmento: ${segmentoDetectado}`     : "",
-      datos.urlsFotos?.length
-        ? `\n📷 FOTOS (${datos.urlsFotos.length}):\n${datos.urlsFotos.map((u, i) => `Foto ${i + 1}: ${u}`).join("\n")}`
-        : "",
-    ].filter(Boolean).join("\n"),
-    color_mm3htx5t:   { label: "Pendiente" },
-  };
-
-  const query = `
-    mutation ($boardId: ID!, $itemName: String!, $columnValues: JSON!) {
-      create_item(board_id: $boardId, item_name: $itemName, column_values: $columnValues) { id }
-    }
-  `;
-
-  const itemName = [datos.marca, datos.modelo, datos.anio].filter(Boolean).join(" ") || "AUTO sin datos";
-
-  const response = await axios.post(
-    "https://api.monday.com/v2",
-    { query, variables: { boardId: process.env.MONDAY_BOARD_ID, itemName, columnValues: JSON.stringify(columnValues) } },
-    { headers: { Authorization: process.env.MONDAY_API_KEY, "Content-Type": "application/json" } }
-  );
-
-  return response.data?.data?.create_item?.id || null;
-}
-
 // ── PostgreSQL insert ─────────────────────────────────────────────────────────
-async function guardarEnDB(datos, mondayId) {
+async function guardarEnDB(datos) {
   const result = await pool.query(
     `INSERT INTO whatsapp_leads
        (telefono, nombre, marca, modelo, version, anio, kilometraje, precio,
-        ciudad, factura, comentarios, imagenes, prioridad, faltantes, monday_item_id, publicado)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+        ciudad, factura, comentarios, imagenes, prioridad, faltantes, publicado)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
      RETURNING id`,
     [
       datos.telefono, datos.nombre, datos.marca, datos.modelo, datos.version,
       datos.anio ?? null, datos.kilometraje ?? null, datos.precio ?? null,
       datos.ciudad, datos.factura, datos.comentarios,
-      datos.imagenes || [], datos.prioridad, datos.faltantes || [], mondayId,
-      false, // publicado = false por defecto → se activa desde Monday al aprobar
+      datos.imagenes || [], datos.prioridad, datos.faltantes || [],
+      false,
     ]
   );
   return result.rows[0].id;
@@ -429,119 +304,55 @@ app.get("/", (req, res) => {
     status: "ok",
     service: "WeCars WhatsApp Bot",
     buffer: buffer.size,
-    message: "WhatsApp + OpenAI + PostgreSQL + Monday ✅",
+    message: "WhatsApp + OpenAI + PostgreSQL ✅",
   });
 });
 
-// ── GET /vehiculos — Lee del tablero weCars Market de Monday (publicados) ─────
-const MONDAY_MARKET_BOARD_ID = process.env.MONDAY_MARKET_BOARD_ID || "18414157675";
-
-async function obtenerVehiculosMonday() {
-  const query = `
-    query ($boardId: ID!) {
-      boards(ids: [$boardId]) {
-        items_page(limit: 50) {
-          items {
-            id
-            name
-            created_at
-            column_values {
-              id
-              text
-              value
-            }
-          }
-        }
-      }
-    }
-  `;
-
-  const response = await axios.post(
-    "https://api.monday.com/v2",
-    { query, variables: { boardId: MONDAY_MARKET_BOARD_ID } },
-    { headers: { Authorization: process.env.MONDAY_API_KEY, "Content-Type": "application/json" } }
-  );
-
-  const raw = response.data;
-  if (raw.errors) console.error("[Monday Market] Errors:", JSON.stringify(raw.errors));
-  const items = raw?.data?.boards?.[0]?.items_page?.items || [];
-  console.log(`[Monday Market] Board ${MONDAY_MARKET_BOARD_ID} → ${items.length} items`);
-
-  return items.map(item => {
-    // Convierte el array de column_values a un objeto { colId: text }
-    const cols = {};
-    for (const cv of item.column_values) {
-      cols[cv.id] = cv.text || "";
-    }
-
-    // Extrae URLs de Cloudinary del campo de comentarios/long_text
-    const longText = item.column_values.find(c => c.id === "long_text_mm3hvzwc")?.text || "";
-    const fotoRegex = /https:\/\/res\.cloudinary\.com\/[^\s]+/g;
-    const imagenes = longText.match(fotoRegex) || [];
-
-    // Teléfono viene como objeto JSON en el value
-    let telefono = "";
-    try {
-      const phoneVal = item.column_values.find(c => c.id === "phone_mm3hh4n");
-      if (phoneVal?.value) {
-        const parsed = JSON.parse(phoneVal.value);
-        telefono = parsed.phone || "";
-      }
-    } catch (_) {}
-
-    // Carrocería y Segmento vienen como JSON en .value (dropdown)
-    let carroceria = "";
-    let segmento   = "";
-    try {
-      const cVal = item.column_values.find(c => c.id === "dropdown_mm3p89g4");
-      if (cVal?.text) carroceria = cVal.text;
-    } catch (_) {}
-    try {
-      const sVal = item.column_values.find(c => c.id === "dropdown_mm3ptfc5");
-      if (sVal?.text) segmento = sVal.text;
-    } catch (_) {}
-    // Acepta crédito: boolean
-    const aceptaCredito = item.column_values.find(c => c.id === "boolean_mm3pa3jr")?.text === "true";
-
-    return {
-      id:            item.id,
-      monday_id:     item.id,
-      nombre:        item.name,
-      marca:         cols["text_mm3hz3ps"]    || null,
-      modelo:        cols["text_mm3hnpfp"]    || null,
-      version:       cols["text_mm3h4yrh"]    || null,
-      anio:          parseInt(cols["numeric_mm3h6v7"])  || null,
-      kilometraje:   parseInt(cols["numeric_mm3h45jr"]) || null,
-      precio:        parseInt(cols["numeric_mm3ha16x"]) || null,
-      ciudad:        cols["text_mm3hx5k"]     || null,
-      factura:       cols["text_mm3hdqs4"]    || null,
-      carroceria:    carroceria || null,
-      segmento:      segmento   || null,
-      aceptaCredito,
-      telefono,
-      imagenes,
-      created_at:    item.created_at,
-    };
-  });
-}
-
+// ── GET /vehiculos — Vehículos publicados desde PostgreSQL ────────────────────
 app.get("/vehiculos", async (req, res) => {
   try {
-    const vehiculos = await obtenerVehiculosMonday();
-    res.json({ ok: true, total: vehiculos.length, vehiculos });
+    const result = await pool.query(
+      `SELECT id, marca, modelo, version, anio, kilometraje, precio,
+              ciudad, factura, imagenes, prioridad, telefono, nombre, created_at
+       FROM whatsapp_leads WHERE publicado = true ORDER BY created_at DESC LIMIT 50`
+    );
+    res.json({ ok: true, total: result.rows.length, vehiculos: result.rows });
   } catch (err) {
-    console.error("[Monday Market] Error:", err.message);
-    // Fallback a PostgreSQL si Monday falla
-    try {
-      const result = await pool.query(
-        `SELECT id, marca, modelo, version, anio, kilometraje, precio,
-                ciudad, factura, imagenes, prioridad, telefono, nombre, created_at
-         FROM whatsapp_leads WHERE publicado = true ORDER BY created_at DESC LIMIT 50`
-      );
-      res.json({ ok: true, total: result.rows.length, vehiculos: result.rows, source: "db_fallback" });
-    } catch (dbErr) {
-      res.status(500).json({ ok: false, error: err.message });
-    }
+    console.error("[DB] Error /vehiculos:", err.message);
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// ── GET /leads — Todos los leads (para panel admin) ───────────────────────────
+app.get("/leads", async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT id, telefono, nombre, marca, modelo, version, anio, kilometraje, precio,
+              ciudad, factura, comentarios, imagenes, prioridad, faltantes, publicado, created_at
+       FROM whatsapp_leads ORDER BY created_at DESC LIMIT 100`
+    );
+    res.json({ ok: true, total: result.rows.length, leads: result.rows });
+  } catch (err) {
+    console.error("[DB] Error /leads:", err.message);
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// ── POST /leads/:id/publicar — Aprueba un lead para el catálogo ──────────────
+app.post("/leads/:id/publicar", async (req, res) => {
+  const { id } = req.params;
+  try {
+    const result = await pool.query(
+      `UPDATE whatsapp_leads SET publicado = true WHERE id = $1 RETURNING id, marca, modelo`,
+      [id]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ ok: false, error: "Lead no encontrado" });
+    const { marca, modelo } = result.rows[0];
+    console.log(`[Admin] Lead ${id} publicado: ${marca} ${modelo}`);
+    res.json({ ok: true, id: Number(id), marca, modelo });
+  } catch (err) {
+    console.error("[DB] Error /leads/:id/publicar:", err.message);
+    res.status(500).json({ ok: false, error: err.message });
   }
 });
 
@@ -582,65 +393,6 @@ app.post("/webhook", async (req, res) => {
   }
 });
 
-// ── GET /debug-monday — diagnóstico temporal ──────────────────────────────────
-app.get("/debug-monday", async (req, res) => {
-  try {
-    const query = `query ($boardId: ID!) {
-      boards(ids: [$boardId]) {
-        name
-        items_page(limit: 5) {
-          items { id name created_at column_values { id text } }
-        }
-      }
-    }`;
-    const response = await axios.post(
-      "https://api.monday.com/v2",
-      { query, variables: { boardId: MONDAY_MARKET_BOARD_ID } },
-      { headers: { Authorization: process.env.MONDAY_API_KEY, "Content-Type": "application/json" } }
-    );
-    res.json(response.data);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// ── POST /monday-publish — Monday llama esto cuando se hace click en "Publicar" ──
-// Monday envía un challenge la primera vez para verificar el endpoint
-app.post("/monday-publish", async (req, res) => {
-  // Verificación de Monday (handshake inicial)
-  if (req.body.challenge) {
-    console.log("[Monday Webhook] Challenge recibido, respondiendo...");
-    return res.json({ challenge: req.body.challenge });
-  }
-
-  const itemId = (req.body.event?.pulseId || req.body.event?.itemId)?.toString();
-  if (!itemId) {
-    console.log("[Monday Webhook] Sin itemId en el body:", JSON.stringify(req.body));
-    return res.status(400).json({ error: "No itemId" });
-  }
-
-  console.log(`[Monday Webhook] Publicando item Monday: ${itemId}`);
-
-  try {
-    const result = await pool.query(
-      `UPDATE whatsapp_leads SET publicado = true WHERE monday_item_id = $1 RETURNING id, marca, modelo`,
-      [itemId]
-    );
-
-    if (result.rows.length === 0) {
-      console.log(`[Monday Webhook] Item ${itemId} no encontrado en DB`);
-      return res.json({ ok: false, msg: "No encontrado en DB" });
-    }
-
-    const { id, marca, modelo } = result.rows[0];
-    console.log(`[Monday Webhook] ✅ Publicado en weMarket: ${marca} ${modelo} (DB id: ${id})`);
-    res.json({ ok: true, id });
-
-  } catch (err) {
-    console.error("[Monday Webhook] Error:", err.message);
-    res.status(500).json({ error: err.message });
-  }
-});
 
 // ── Arranque ──────────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3000;
