@@ -1,3 +1,6 @@
+const dns = require("dns");
+dns.setDefaultResultOrder("ipv4first"); // Render no alcanza IPv6 de Supabase
+
 const express = require("express");
 const OpenAI = require("openai");
 const axios = require("axios");
